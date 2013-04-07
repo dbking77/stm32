@@ -39,6 +39,7 @@
 #include "usart.hpp"
 #include "encoder.hpp"
 #include "ncv7729.hpp"
+#include "imu.hpp"
 
 typedef Gpio<GPIOA_BASE,0> left_enc_a;
 typedef Gpio<GPIOA_BASE,1> left_enc_b;
@@ -56,8 +57,8 @@ typedef Gpio<GPIOB_BASE,6> serial_tx; /* USART1 */
 typedef Gpio<GPIOB_BASE,7> serial_rx;
 typedef Gpio<GPIOB_BASE,8> radio_ch3; /* TIM10, CH1 */
 typedef Gpio<GPIOB_BASE,9> radio_ch4; /* TIM11, CH1 */
-typedef Gpio<GPIOB_BASE,10> gyro_scl; /* I2C2 */
-typedef Gpio<GPIOB_BASE,11> gyro_sda;
+typedef Gpio<GPIOB_BASE,10> imu_scl; /* I2C2 */
+typedef Gpio<GPIOB_BASE,11> imu_sda;
 typedef Gpio<GPIOB_BASE,13> sck; /* SPI2 */
 typedef Gpio<GPIOB_BASE,14> miso;
 typedef Gpio<GPIOB_BASE,15> mosi;
@@ -79,6 +80,8 @@ typedef Gpio<GPIOC_BASE,15> bot_g_led;
 Encoder<TIM5_BASE> left_enc;
 Encoder<TIM3_BASE> right_enc;
 
+IMU<I2C2_BASE, DMA1_Stream3_BASE, 7 /* DMA_CHANNEL */, imu_scl, imu_sda> imu;
+
 /* two NCV7729 motor drivers */
 Ncv7729<SPI2_BASE, left_CS, TIM1_BASE, motor_enable, left_fault, 1> left_motor;
 Ncv7729<SPI2_BASE, right_CS, TIM1_BASE, motor_enable, right_fault, 2> right_motor;
@@ -92,7 +95,7 @@ uint32_t system_clock;
 volatile int16_t left_status, right_status;
 
 int main(void)
-{
+{  
   NVIC_SetPriorityGrouping(3);
 
   // enable all GPIO clocks
@@ -112,7 +115,7 @@ int main(void)
   top_r_led::high();
   top_g_led::high();
   top_b_led::low();
-  bot_r_led::low();
+  bot_r_led::high();
   bot_g_led::high();
   bot_b_led::high();
 
@@ -140,9 +143,13 @@ int main(void)
 
   // setup usart
   RCC->APB2ENR |= RCC_APB2ENR_USART1EN;
+
   usart1.init(115200);
   NVIC_SetPriority(USART1_IRQn, 1);
   NVIC_EnableIRQ(USART1_IRQn);
+
+  // setup systick
+  imu.init_imu();
 
   // setup systick
   SysTick_Config(SystemCoreClock/1000);
@@ -155,6 +162,7 @@ int main(void)
     delay_ms(1000);
     left_status = left_motor.read(NCV7729_RD_DIAG);
     right_status = right_motor.read(NCV7729_RD_DIAG);
+    imu.imu_update(system_clock);
   }
 
 }
@@ -170,18 +178,21 @@ void SysTick_Handler(void)
     if( (system_clock / 1000) % 3 == 0)
     {
       left_motor.set(0);
+      right_motor.set(0);
       top_b_led::high();
       top_r_led::low();
     }
     else if( (system_clock / 1000) % 3 == 1)
     {
       left_motor.set(0.1);
+      right_motor.set(0.1);
       top_r_led::high();
       top_g_led::low();
     }
     else
     {
       left_motor.set(-0.1);
+      right_motor.set(-0.1);
       top_g_led::high();
       top_b_led::low(); 
     }

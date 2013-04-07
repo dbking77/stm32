@@ -36,7 +36,7 @@ BUILD_PATH  := build
 BUILDDIRS   := $(BUILD_PATH)
 
 # Build main stuff
-TGT_BIN     := $(BUILD_PATH)/main.o $(BUILD_PATH)/startup_f4.o $(BUILD_PATH)/system_stm32f4xx.o
+TGT_BIN     := $(BUILD_PATH)/main.o $(BUILD_PATH)/startup_f4.o $(BUILD_PATH)/system_stm32f4xx.o  $(BUILD_PATH)/memcpy.o
 
 all: $(BUILD_PATH)/$(PRG).bin
 clean:
@@ -62,15 +62,15 @@ BUILDDIRS   += $(BUILD_PATH)/std_periph
 #TGT_BIN    += $(BUILD_PATH)/std_periph/stm32f4xx_crc.o
 #TGT_BIN    += $(BUILD_PATH)/std_periph/stm32f4xx_dac.o
 #TGT_BIN    += $(BUILD_PATH)/std_periph/stm32f4xx_dbgmcu.o
-#TGT_BIN    += $(BUILD_PATH)/std_periph/stm32f4xx_dma.o
+TGT_BIN    += $(BUILD_PATH)/std_periph/stm32f4xx_dma.o
 #TGT_BIN    += $(BUILD_PATH)/std_periph/stm32f4xx_exti.o
 #TGT_BIN    += $(BUILD_PATH)/std_periph/stm32f4xx_flash.o
 #TGT_BIN    += $(BUILD_PATH)/std_periph/stm32f4xx_fsmc.o
 #TGT_BIN    += $(BUILD_PATH)/std_periph/stm32f4xx_gpio.o
-#TGT_BIN    += $(BUILD_PATH)/std_periph/stm32f4xx_i2c.o
+TGT_BIN    += $(BUILD_PATH)/std_periph/stm32f4xx_i2c.o
 #TGT_BIN    += $(BUILD_PATH)/std_periph/stm32f4xx_iwdg.o
 #TGT_BIN    += $(BUILD_PATH)/std_periph/stm32f4xx_pwr.o
-#TGT_BIN    += $(BUILD_PATH)/std_periph/stm32f4xx_rcc.o
+TGT_BIN    += $(BUILD_PATH)/std_periph/stm32f4xx_rcc.o
 #TGT_BIN    += $(BUILD_PATH)/std_periph/stm32f4xx_rtc.o
 #TGT_BIN    += $(BUILD_PATH)/std_periph/stm32f4xx_sdio.o
 TGT_BIN    += $(BUILD_PATH)/std_periph/stm32f4xx_spi.o
