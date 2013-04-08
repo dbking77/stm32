@@ -67,13 +67,16 @@ enum imu_error_op_t {
   IMU_ERROR_READ_DMA       = 4, // error occurred while reading register data DMA
 };
 
-
 enum imu_state_t {
-  IMU_IDLE = 0,
-  IMU_READING_GYRO = 1,           // waiting for gyro to return
-  IMU_TIMING_GYRO = 2,            // waiting a bit, for timing considerations
-  IMU_READING_ACCELEROMETER = 3,  // waiting for accelerometer to return
-  IMU_TIMING_ACCELEROMETER = 4,   // waiting a bit, for timing considerations
+  IMU_IDLE          = 0, // initital state
+
+  IMU_DELAY_GYRO    = 1, // waiting a bit before starting gyro read
+  IMU_READING_GYRO  = 2, // waiting for gyro read to complete
+  IMU_RESTART_GYRO  = 3, // tries to intialize gyro, will return to this state if there is a gyro read error
+
+  IMU_DELAY_ACCEL   = 4, // waiting a bit before starting accelerometer read
+  IMU_READING_ACCEL = 5, // waiting for accelerometer to read to complet
+  IMU_RESTART_ACCEL = 6, // tries to initialize accel, will return to this state if there is accel read error
 }; 
 
 struct imu_error_t
@@ -86,39 +89,55 @@ struct imu_error_t
 
 
 
-struct imu_data_t
+struct accel_data_t
 {
-  uint16_t accel_x;
-  uint16_t accel_y;
-  uint16_t accel_z;
-  uint8_t  gyro_temp;
-  uint8_t  gyro_sr;
-  uint16_t gyro_x;
-  uint16_t gyro_y;
-  uint16_t gyro_z;
+  int16_t x;
+  int16_t y;
+  int16_t z;
+};
+
+struct gyro_data_t
+{
+  int8_t  temp;
+  uint8_t status;
+  int16_t x;
+  int16_t y;
+  int16_t z;
 };
 
 
-template<int _I2C_PTR, int _DMA_STREAM, int _DMA_CHANNEL, typename IMU_SCL, typename IMU_SDA>
+template<int _I2C_PTR, int _DMA_STREAM_PTR, int _DMA_STREAM_NUM, int _DMA_CHANNEL, typename IMU_SCL, typename IMU_SDA>
 
 class IMU
 {
 
+  enum {GYRO_READ_TIMEOUT=6, GYRO_DELAY_TIME=2, ACCEL_READ_TIMEOUT=4, ACCEL_DELAY_TIME=2};
+
   imu_state_t imu_i2c_state; 
   uint32_t imu_i2c_timer;    // copy of system_time when current I2C transfer was started, used to detect timeouts
+  uint32_t imu_gyro_time;
+  uint32_t imu_update_time;
   imu_error_t imu_error;     // last error that occurred
 
-  imu_data_t imu_data;   // more recent completely read IMU data
-  imu_data_t imu_buffer; // buffer for storing IMU data while reading is in progress
+  uint32_t gyro_reads;  // number of completed gyro reads
+  uint32_t accel_reads; // number of completed accel reads
+
+  // buffers for storing data while reading is in progress 
+  accel_data_t accel_buffer; 
+  gyro_data_t gyro_buffer; 
+
+public:
+  // more recent completely read data
+  accel_data_t accel_data; 
+  gyro_data_t gyro_data; 
 
 
-
- 
+private: 
   /* Handle a failed start */
-  int32_t imu_timeout_callback(imu_i2c_error_t error_i2c, imu_error_op_t error_op)
+  bool imu_timeout_callback(imu_i2c_error_t error_i2c, imu_error_op_t error_op)
   {
     I2C_TypeDef* const I2Cx = (I2C_TypeDef*) _I2C_PTR;
-    DMA_Stream_TypeDef* const DMAy_Streamx = (DMA_Stream_TypeDef*) _DMA_STREAM;
+    DMA_Stream_TypeDef* const DMAy_Streamx = (DMA_Stream_TypeDef*) _DMA_STREAM_PTR;
 
     I2C_GenerateSTOP(I2Cx, DISABLE);
 
@@ -153,7 +172,7 @@ class IMU
     I2C_Init(I2Cx, &I2C_InitStructure);
     I2C_Cmd(I2Cx, ENABLE);
 
-    return -1;    
+    return false;
   }
 
   /** Start a read of register <reg_addr> from device with I2C address <i2c_addr).
@@ -166,10 +185,10 @@ class IMU
    *  Once a the register address is written, an second I2C transfer is started to 
    *  read data from device.
    */
-  int32_t imu_start_read(uint8_t i2c_addr, uint8_t reg_addr, uint8_t* buffer, uint8_t num_bytes)
+  bool imu_start_read(uint8_t i2c_addr, uint8_t reg_addr, uint8_t* buffer, uint8_t num_bytes)
   {
     I2C_TypeDef* const I2Cx = (I2C_TypeDef*) _I2C_PTR;
-    DMA_Stream_TypeDef* const DMAy_Streamx = (DMA_Stream_TypeDef*) _DMA_STREAM;
+    DMA_Stream_TypeDef* const DMAy_Streamx = (DMA_Stream_TypeDef*) _DMA_STREAM_PTR;
 
     uint32_t dma_channel = (_DMA_CHANNEL & 7) << 25;
 
@@ -192,9 +211,6 @@ class IMU
     DMA_DeInit(DMAy_Streamx);
     DMA_Init(DMAy_Streamx, &DMA_InitStructure);
 
-    // Enable DMA NACK
-    I2C_DMALastTransferCmd(I2Cx, ENABLE);
-
     uint32_t timeout;
     
     // First transfer, write register address to device
@@ -208,6 +224,7 @@ class IMU
       while(!I2C_GetFlagStatus(I2Cx, I2C_FLAG_SB)){
         if((timeout--) == 0) return imu_timeout_callback(I2C_ERROR_START_BIT, IMU_ERROR_WRITE_ADDR);
       }
+      
 
       // Send device I2C address, and start I2C write transmission
       I2C_Send7bitAddress(I2Cx, i2c_addr, I2C_Direction_Transmitter);
@@ -258,20 +275,22 @@ class IMU
     {
       // Enable I2C DMA request
       I2C_DMACmd(I2Cx,ENABLE);
+      // Enable DMA NACK
+      I2C_DMALastTransferCmd(I2Cx, ENABLE);
       // Enable DMA RX Channel
       DMA_Cmd(DMAy_Streamx, ENABLE);
     }
     
     // will process later!
-    return 0;
+    return true;
   }
 
 
   /* DMA is done, shut things down */
-  int32_t imu_finish_read(void)
+  bool imu_finish_read(void)
   {
     I2C_TypeDef* const I2Cx = (I2C_TypeDef*) _I2C_PTR;
-    DMA_Stream_TypeDef* const DMAy_Streamx = (DMA_Stream_TypeDef*) _DMA_STREAM;
+    DMA_Stream_TypeDef* const DMAy_Streamx = (DMA_Stream_TypeDef*) _DMA_STREAM_PTR;
 
     // Send STOP
     I2C_GenerateSTOP(I2Cx, ENABLE);
@@ -284,25 +303,25 @@ class IMU
 
     // Clear DMA RX Transfer Complete Flag
     uint32_t flag_tc;
-    switch(_DMA_CHANNEL)
+    switch(_DMA_STREAM_NUM)
     {
-    case 0 :flag_tc = DMA_FLAG_TCIF0;
-    case 1 :flag_tc = DMA_FLAG_TCIF1;
-    case 2 :flag_tc = DMA_FLAG_TCIF2;
-    case 3 :flag_tc = DMA_FLAG_TCIF3;
-    case 4 :flag_tc = DMA_FLAG_TCIF4;
-    case 5 :flag_tc = DMA_FLAG_TCIF5;
-    case 6 :flag_tc = DMA_FLAG_TCIF6;
-    case 7 :flag_tc = DMA_FLAG_TCIF7;
+    case 0 :flag_tc = DMA_FLAG_TCIF0; break;
+    case 1 :flag_tc = DMA_FLAG_TCIF1; break;
+    case 2 :flag_tc = DMA_FLAG_TCIF2; break;
+    case 3 :flag_tc = DMA_FLAG_TCIF3; break;
+    case 4 :flag_tc = DMA_FLAG_TCIF4; break;
+    case 5 :flag_tc = DMA_FLAG_TCIF5; break;
+    case 6 :flag_tc = DMA_FLAG_TCIF6; break;
+    case 7 :flag_tc = DMA_FLAG_TCIF7; break;
     }
     DMA_ClearFlag(DMAy_Streamx, flag_tc);
 
-    return 0;
+    return true;
   }
 
 
   /* Writes a single byte to register <reg_addr> of I2C device with addr <i2c_addr> */
-  int32_t imu_write(uint8_t i2c_addr, uint8_t reg_addr, uint8_t data)
+  bool imu_write(uint8_t i2c_addr, uint8_t reg_addr, uint8_t data)
   {
     I2C_TypeDef* const I2Cx = (I2C_TypeDef*) _I2C_PTR;
 
@@ -347,26 +366,23 @@ class IMU
     // Send STOP
     I2C_GenerateSTOP(I2Cx, ENABLE);
 
-    return 0;
-
+    return true;
   }
 
 
   /* Accelerometer does not measure at startup, need to configure it to do so */
-  int32_t imu_start_accelerometer(void)
+  bool imu_start_accelerometer(void)
   {
     /* Enable Accelerometer via Control Register 1
      *  bits 7:4 = data rate = 0111b (Normal / low-power mode (400hz))
      *  bit  3   = power on = 0b  
      *  bits 2:0 = Z/Y/X on = 111b
      */
-    imu_write(DEVICE_ACCEL, ADDR_ACCEL_CTRL_REG1_A, 0x77);
-
-    return 0;
+    return imu_write(DEVICE_ACCEL, ADDR_ACCEL_CTRL_REG1_A, 0x77);
   }
 
   /* Gyro needs configuration at startup */
-  int32_t imu_start_gyro(void)
+  bool imu_start_gyro(void)
   {
     /* Enable Gyro via Control Register 1
      *  bits 7:6 = data rate = 10b (380hz update rate)
@@ -374,7 +390,8 @@ class IMU
      *  bit  3   = power on = 1b  
      *  bits 2:0 = Z/Y/X on = 111b
      */
-    imu_write(DEVICE_GYRO, ADDR_GYRO_CTRL_REG1, 0xBF);
+    if (!imu_write(DEVICE_GYRO, ADDR_GYRO_CTRL_REG1, 0xBF))
+      return false;
 
     /* Change Full Scale Selection
      *  bit  7   = block update (default: 0)
@@ -382,9 +399,10 @@ class IMU
      *  bit  5:4 = full scale = 11b (2000dps)
      *                              (=70mdps/digit)
      */
-    imu_write(DEVICE_GYRO, ADDR_GYRO_CTRL_REG4, 0x30);
+    if (!imu_write(DEVICE_GYRO, ADDR_GYRO_CTRL_REG4, 0x30))
+      return false;
 
-    return 0;
+    return true;
   }
 
 
@@ -448,6 +466,15 @@ public:
     I2C_Cmd(I2Cx, ENABLE);
   }
 
+  bool start_accel_read()
+  {
+    return imu_start_read(DEVICE_ACCEL, ADDR_ACCEL_X_L_A | 0x80, (uint8_t *) &accel_buffer, sizeof(accel_buffer));
+  }
+
+  bool start_gyro_read()
+  {
+    return imu_start_read(DEVICE_GYRO, ADDR_GYRO_TEMP_OUT | 0x80, (uint8_t *) &gyro_buffer, sizeof(gyro_buffer));
+  }
 
 
   /* This is called from the main loop. It takes action based on our current state and whether the 
@@ -458,97 +485,126 @@ public:
    */
   void imu_update(uint32_t system_time)
   {
-    DMA_Stream_TypeDef* const DMAy_Streamx = (DMA_Stream_TypeDef*) _DMA_STREAM;
+    DMA_Stream_TypeDef* const DMAy_Streamx = (DMA_Stream_TypeDef*) _DMA_STREAM_PTR;
 
     // function uses flag_tc
     uint32_t flag_tc;
-    switch(_DMA_CHANNEL)
+    switch(_DMA_STREAM_NUM)
     {
-    case 0 :flag_tc = DMA_FLAG_TCIF0;
-    case 1 :flag_tc = DMA_FLAG_TCIF1;
-    case 2 :flag_tc = DMA_FLAG_TCIF2;
-    case 3 :flag_tc = DMA_FLAG_TCIF3;
-    case 4 :flag_tc = DMA_FLAG_TCIF4;
-    case 5 :flag_tc = DMA_FLAG_TCIF5;
-    case 6 :flag_tc = DMA_FLAG_TCIF6;
-    case 7 :flag_tc = DMA_FLAG_TCIF7;
+    case 0 :flag_tc = DMA_FLAG_TCIF0; break;
+    case 1 :flag_tc = DMA_FLAG_TCIF1; break;
+    case 2 :flag_tc = DMA_FLAG_TCIF2; break;
+    case 3 :flag_tc = DMA_FLAG_TCIF3; break;
+    case 4 :flag_tc = DMA_FLAG_TCIF4; break;
+    case 5 :flag_tc = DMA_FLAG_TCIF5; break;
+    case 6 :flag_tc = DMA_FLAG_TCIF6; break;
+    case 7 :flag_tc = DMA_FLAG_TCIF7; break;
     }
 
-
-    if( imu_i2c_state == IMU_READING_ACCELEROMETER )
+    
+    switch (imu_i2c_state)
     {
-      // out of time?
-      if(timediff(system_time,imu_i2c_timer) > 2) 
+    case IMU_DELAY_ACCEL:
+      if(timediff(system_time,imu_i2c_timer) > ACCEL_DELAY_TIME)
+      {
+        // start read of accel
+        if (start_accel_read())
+        {
+          imu_i2c_state = IMU_READING_ACCEL;
+          imu_i2c_timer = system_time;
+        }
+        else 
+        {
+          // read of accel failed to start, try re-starting accel
+          imu_i2c_state = IMU_RESTART_ACCEL;
+        }
+      }
+      break;
+   
+
+    case IMU_READING_ACCEL:
+      if( DMA_GetFlagStatus(DMAy_Streamx, flag_tc))
+      {
+        // Setup for next cycle
+        imu_finish_read();
+        imu_i2c_timer = system_time;
+        imu_i2c_state = IMU_DELAY_GYRO;        
+        // Got good GYRO data, copy it from buffer
+        accel_data = accel_buffer;
+        ++accel_reads;
+      }
+      else if(timediff(system_time,imu_i2c_timer) > ACCEL_READ_TIMEOUT) 
       {
         imu_timeout_callback(I2C_ERROR_TIMEOUT, IMU_ERROR_READ_DMA);
-        imu_i2c_timer = system_time;
-        imu_i2c_state = IMU_TIMING_ACCELEROMETER;
-        return;
+        imu_i2c_state = IMU_RESTART_ACCEL;
       }
 
-      // still receiving?
-      if( !DMA_GetFlagStatus(DMAy_Streamx, flag_tc)) return;
+      break;
 
-      // Setup for next cycle
-      imu_finish_read();
+
+    case IMU_RESTART_ACCEL:
+      imu_start_accelerometer();
+      imu_i2c_state = IMU_DELAY_GYRO;
       imu_i2c_timer = system_time;
-      imu_i2c_state = IMU_TIMING_ACCELEROMETER;
-    }
+      break;
 
 
-    else if( imu_i2c_state == IMU_TIMING_ACCELEROMETER )
-    {
-      if(timediff(system_time,imu_i2c_timer) > 2)
+    // wait a couple msec before starting gyro read
+    case IMU_DELAY_GYRO:
+      if(timediff(system_time,imu_i2c_timer) > GYRO_DELAY_TIME)
       {
-        imu_i2c_state = IMU_READING_GYRO;
-        imu_start_read(DEVICE_GYRO, ADDR_GYRO_TEMP_OUT | 0x80, (uint8_t *) &imu_buffer.gyro_temp, 8);
-        imu_i2c_timer = system_time;
+        if (start_gyro_read())
+        {
+          imu_i2c_state = IMU_READING_GYRO;
+          imu_i2c_timer = system_time;
+          imu_gyro_time = system_time;
+        }
+        else 
+        {
+          // if there was an error starting read, try re-starting gyro
+          imu_i2c_state = IMU_RESTART_GYRO;
+        }
       }
-    }
+      break;
 
-
-    else if( imu_i2c_state == IMU_READING_GYRO )
-    {
-      // out of time?
-      if(timediff(system_time,imu_i2c_timer) > 3)
+    case IMU_READING_GYRO:
+      if(DMA_GetFlagStatus(DMAy_Streamx, flag_tc))
       {
+        // Setup for next cycle
+        imu_finish_read();
+        imu_i2c_timer = system_time;
+        imu_i2c_state = IMU_DELAY_ACCEL;
+        
+        // Got good GYRO data, copy it from buffer
+        gyro_data = gyro_buffer;
+        ++gyro_reads;
+      }
+      else if(timediff(system_time,imu_i2c_timer) > GYRO_READ_TIMEOUT)
+      {
+        // there was a timeout reading gyro, try restarting it
         imu_timeout_callback(I2C_ERROR_TIMEOUT, IMU_ERROR_READ_DMA);
-        imu_i2c_timer = system_time;
-        imu_i2c_state = IMU_TIMING_GYRO;
-        return;
+        imu_i2c_state = IMU_RESTART_GYRO;
       }
-      // still receiving?
-      if( !DMA_GetFlagStatus(DMAy_Streamx, flag_tc) ) return;
-
-      // Setup for next cycle
-      imu_finish_read();
+      break;
+     
+    case IMU_RESTART_GYRO:
+      imu_start_gyro();
+      imu_i2c_state = IMU_DELAY_ACCEL;
       imu_i2c_timer = system_time;
-      imu_i2c_state = IMU_TIMING_GYRO;
-    }
-  
+      break;
 
-    else if( imu_i2c_state == IMU_TIMING_GYRO )
-    {
-      // accellerometer and gyro transfer is complete, copy over buffered data
-      imu_data = imu_buffer;
-
-      if(timediff(system_time,imu_i2c_timer) > 2)
-      {
-        imu_i2c_state = IMU_READING_ACCELEROMETER;
-        imu_start_read(DEVICE_ACCEL, ADDR_ACCEL_X_L_A | 0x80, (uint8_t *) &imu_buffer.accel_x, 6);
-        imu_i2c_timer = system_time;
-      }
-    }
-
-  
-    else
-    {
+    default:
       imu_start_accelerometer();
       imu_start_gyro();
-      imu_i2c_state = IMU_READING_GYRO;
-      imu_start_read(DEVICE_GYRO, ADDR_GYRO_TEMP_OUT | 0x80, (uint8_t *) &imu_buffer.gyro_temp, 8);
+      imu_i2c_state = IMU_DELAY_GYRO;
       imu_i2c_timer = system_time;
-    }    
+      break;
+
+    } // end switch
+
+
+    // debugging record last time update was called
+    imu_update_time = system_time;
   }
 
 };

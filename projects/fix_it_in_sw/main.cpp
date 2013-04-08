@@ -41,6 +41,12 @@
 #include "ncv7729.hpp"
 #include "imu.hpp"
 
+
+extern "C"
+{
+#include "comm.h"
+}
+
 typedef Gpio<GPIOA_BASE,0> left_enc_a;
 typedef Gpio<GPIOA_BASE,1> left_enc_b;
 typedef Gpio<GPIOA_BASE,2> radio_ch1; /* TIM9, CH1 */
@@ -80,7 +86,7 @@ typedef Gpio<GPIOC_BASE,15> bot_g_led;
 Encoder<TIM5_BASE> left_enc;
 Encoder<TIM3_BASE> right_enc;
 
-IMU<I2C2_BASE, DMA1_Stream3_BASE, 7 /* DMA_CHANNEL */, imu_scl, imu_sda> imu;
+IMU<I2C2_BASE, DMA1_Stream3_BASE, 3 /* DMA STREAM*/, 7 /* DMA_CHANNEL */, imu_scl, imu_sda> imu;
 
 /* two NCV7729 motor drivers */
 Ncv7729<SPI2_BASE, left_CS, TIM1_BASE, motor_enable, left_fault, 1> left_motor;
@@ -90,9 +96,19 @@ Ncv7729<SPI2_BASE, right_CS, TIM1_BASE, motor_enable, right_fault, 2> right_moto
 Usart<USART1_BASE, 32> usart1;
 
 /* system clock */
-uint32_t system_clock;
+volatile uint32_t system_clock;
 
 volatile int16_t left_status, right_status;
+
+
+void print(char const * str)
+{
+  while (*str!='\0')
+  {
+    usart1.write(*str);
+    ++str;
+  }
+}
 
 int main(void)
 {  
@@ -143,8 +159,9 @@ int main(void)
 
   // setup usart
   RCC->APB2ENR |= RCC_APB2ENR_USART1EN;
-
-  usart1.init(115200);
+  serial_tx::mode(GPIO_ALTERNATE_2MHz | GPIO_AF_USART1);
+  serial_rx::mode(GPIO_ALTERNATE_2MHz | GPIO_AF_USART1);
+  usart1.init(38400);
   NVIC_SetPriority(USART1_IRQn, 1);
   NVIC_EnableIRQ(USART1_IRQn);
 
@@ -159,9 +176,19 @@ int main(void)
   
   while(1)
   {
-    delay_ms(1000);
-    left_status = left_motor.read(NCV7729_RD_DIAG);
-    right_status = right_motor.read(NCV7729_RD_DIAG);
+    if ((system_clock % 1000) == 0)
+    {
+      left_status = left_motor.read(NCV7729_RD_DIAG);
+      right_status = right_motor.read(NCV7729_RD_DIAG);
+      print("accel :");
+      print(" x="); 
+      print(dec2str(imu.accel_data.x));
+      print(" y=");
+      print(dec2str(imu.accel_data.y));
+      print(" z=");
+      print(dec2str(imu.accel_data.z));
+      print("\r\n");
+    }
     imu.imu_update(system_clock);
   }
 
