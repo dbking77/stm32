@@ -74,7 +74,7 @@ TGT_BIN    += $(BUILD_PATH)/std_periph/stm32f4xx_rcc.o
 #TGT_BIN    += $(BUILD_PATH)/std_periph/stm32f4xx_rtc.o
 #TGT_BIN    += $(BUILD_PATH)/std_periph/stm32f4xx_sdio.o
 TGT_BIN    += $(BUILD_PATH)/std_periph/stm32f4xx_spi.o
-#TGT_BIN    += $(BUILD_PATH)/std_periph/stm32f4xx_tim.o
+TGT_BIN    += $(BUILD_PATH)/std_periph/stm32f4xx_tim.o
 #TGT_BIN    += $(BUILD_PATH)/std_periph/stm32f4xx_usart.o
 #TGT_BIN    += $(BUILD_PATH)/std_periph/stm32f4xx_wwdg.o
 

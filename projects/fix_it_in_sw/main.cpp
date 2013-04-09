@@ -40,7 +40,7 @@
 #include "encoder.hpp"
 #include "ncv7729.hpp"
 #include "imu.hpp"
-
+#include "dual_pulse_timer.hpp"
 
 extern "C"
 {
@@ -82,9 +82,16 @@ typedef Gpio<GPIOC_BASE,13> bot_r_led;
 typedef Gpio<GPIOC_BASE,14> bot_b_led;
 typedef Gpio<GPIOC_BASE,15> bot_g_led;
 
+
 /* two attached encoders */
-Encoder<TIM5_BASE> left_enc;
-Encoder<TIM3_BASE> right_enc;
+//Encoder<TIM5_BASE> left_enc;
+//Encoder<TIM3_BASE> right_enc;
+/* Use encoder inputs as pulse timers for sonar instead */
+// Left Encoder TIM5 CH1 and CH2
+// Right Encoder TIM3 CH1 and CH2
+DualPulseTimer<TIM5_BASE, left_enc_a,  left_enc_b > left_sonars;
+DualPulseTimer<TIM3_BASE, right_enc_a, right_enc_b> right_sonars;
+
 
 IMU<I2C2_BASE, DMA1_Stream3_BASE, 3 /* DMA STREAM*/, 7 /* DMA_CHANNEL */, imu_scl, imu_sda> imu;
 
@@ -136,6 +143,7 @@ int main(void)
   bot_b_led::high();
 
   // setup encoders
+  /*
   RCC->APB1ENR |= RCC_APB1ENR_TIM3EN | RCC_APB1ENR_TIM5EN;
   left_enc_a::mode(GPIO_ALTERNATE | GPIO_AF_TIM5);
   left_enc_b::mode(GPIO_ALTERNATE | GPIO_AF_TIM5);
@@ -143,6 +151,12 @@ int main(void)
   right_enc_b::mode(GPIO_ALTERNATE | GPIO_AF_TIM3);
   left_enc.init();
   right_enc.init();
+  */
+
+  // setup sonars
+  RCC->APB1ENR |= RCC_APB1ENR_TIM3EN | RCC_APB1ENR_TIM5EN;
+  left_sonars.init();
+  right_sonars.init();
 
   // setup motors
   RCC->APB2ENR |= RCC_APB2ENR_TIM1EN;
