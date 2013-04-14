@@ -21,8 +21,8 @@ SIZE        := arm-none-eabi-size
 
 # Flags
 INCLUDES    := -I. -I$(LIB_PATH)/CMSIS/Include -I$(LIB_PATH)/ST/inc
-CFLAGS      := -c -D$(MCU) $(MCU_FLAGS) -fno-common -g3 -Os -ffunction-sections
-CXXFLAGS    := $(CFLAGS) -fno-exceptions
+CFLAGS      := -c -D$(MCU) $(MCU_FLAGS) -fno-common -g3 -Os -ffunction-sections -Wall
+CXXFLAGS    := $(CFLAGS) -fno-exceptions -Wall
 LDFLAGS     := -L$(LIB_PATH)/ST/ld -T$(LD_SCRIPT) --gc-sections -v
 CPFLAGS     := -Obinary -v
 ODFLAGS     := -S -t

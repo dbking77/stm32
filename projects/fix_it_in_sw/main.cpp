@@ -155,8 +155,16 @@ int main(void)
 
   // setup sonars
   RCC->APB1ENR |= RCC_APB1ENR_TIM3EN | RCC_APB1ENR_TIM5EN;
+  left_enc_a::mode(GPIO_ALTERNATE | GPIO_AF_TIM5);
+  left_enc_b::mode(GPIO_ALTERNATE | GPIO_AF_TIM5);
+  right_enc_a::mode(GPIO_ALTERNATE | GPIO_AF_TIM3);
+  right_enc_b::mode(GPIO_ALTERNATE | GPIO_AF_TIM3);
   left_sonars.init();
   right_sonars.init();
+  NVIC_SetPriority(TIM5_IRQn, 1);
+  NVIC_SetPriority(TIM3_IRQn, 1);
+  NVIC_EnableIRQ(TIM5_IRQn);
+  NVIC_EnableIRQ(TIM3_IRQn);
 
   // setup motors
   RCC->APB2ENR |= RCC_APB2ENR_TIM1EN;
@@ -243,6 +251,16 @@ void SysTick_Handler(void)
 void USART1_IRQHandler(void)
 {
   usart1.irq();
+}
+
+void TIM3_IRQHandler(void)
+{
+  right_sonars.irq();
+}
+
+void TIM5_IRQHandler(void)
+{
+  left_sonars.irq();
 }
 
 } /* extern C */
