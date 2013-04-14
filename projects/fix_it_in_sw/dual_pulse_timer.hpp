@@ -19,6 +19,34 @@ class DualPulseTimer
   // repeat rate ~20Hz = 50ms
 
 public:
+
+
+  // returns pulse width in uSec, returns 0 if no pulses have been seen for last ~200mSec
+  uint32_t getCh1PulseWidthUsec()
+  {
+    __disable_irq();
+    uint32_t width = ch1.getPulseWidth();
+    __enable_irq();
+    // 1/Fclk * prescaler * 1e6usec/sec 
+    // 1/168e6 * 128 * 1e6 = 0.7619 usec per tick
+    // 195/256 = 0.76171875 ~= 7619
+    return (width * 195) >> 8; 
+  }
+
+  // returns pulse width in uSec, returns 0 if no pulses have been seen for last ~200mSec
+  uint32_t getCh2PulseWidthUsec()
+  {
+    __disable_irq();
+    uint32_t width = ch2.getPulseWidth();
+    __enable_irq();
+    // 1/Fclk * prescaler * 1e6usec/sec 
+    // 1/168e6 * 128 * 1e6 = 0.7619 usec per tick
+    // 195/256 = 0.76171875 ~= 7619
+    return (width * 195) >> 8; 
+  }
+
+
+
   void init()
   {
     TIM_TypeDef* const TIMx = (TIM_TypeDef* const)  _TIMER16_PTR;
@@ -63,10 +91,12 @@ public:
     TIM_ClearFlag(TIMx, TIM_FLAG_CC2OF);
     TIM_ClearFlag(TIMx, TIM_FLAG_CC1);
     TIM_ClearFlag(TIMx, TIM_FLAG_CC2);
+    TIM_ClearFlag(TIMx, TIM_FLAG_Update);
 
-    // enable interrupt on input caputure events
+    // enable interrupt on input capture and update (overflow) events
     TIM_ITConfig(TIMx, TIM_IT_CC1, ENABLE);
     TIM_ITConfig(TIMx, TIM_IT_CC2, ENABLE);
+    TIM_ITConfig(TIMx, TIM_IT_Update, ENABLE);
 
     TIM_Cmd(TIMx, ENABLE);
   }
@@ -120,6 +150,16 @@ public:
 
       //TIM_ClearFlag(TIMx, TIM_FLAG_CC1);      
     }
+
+        
+    if (TIM_GetFlagStatus(TIMx, TIM_FLAG_Update))
+    {
+      TIM_ClearFlag(TIMx, TIM_FLAG_Update);
+      ch1.overflow();
+      ch2.overflow();
+    }
+
+
 
   } //end irq()
 
