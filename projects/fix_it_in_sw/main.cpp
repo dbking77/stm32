@@ -40,6 +40,7 @@
 #include "encoder.hpp"
 #include "ncv7729.hpp"
 #include "imu.hpp"
+#include "pulse_timer.hpp"
 #include "dual_pulse_timer.hpp"
 
 extern "C"
@@ -91,6 +92,12 @@ typedef Gpio<GPIOC_BASE,15> bot_g_led;
 // Right Encoder TIM3 CH1 and CH2
 DualPulseTimer<TIM5_BASE, left_enc_a,  left_enc_b > left_sonars;
 DualPulseTimer<TIM3_BASE, right_enc_a, right_enc_b> right_sonars;
+
+// radio input channels
+PulseTimer<TIM9_BASE,  radio_ch1> radio_in1;
+PulseTimer<TIM2_BASE,  radio_ch2> radio_in2;
+PulseTimer<TIM10_BASE, radio_ch3> radio_in3;
+PulseTimer<TIM11_BASE, radio_ch4> radio_in4;
 
 
 IMU<I2C2_BASE, DMA1_Stream3_BASE, 3 /* DMA STREAM*/, 7 /* DMA_CHANNEL */, imu_scl, imu_sda> imu;
@@ -165,6 +172,27 @@ int main(void)
   NVIC_SetPriority(TIM3_IRQn, 1);
   NVIC_EnableIRQ(TIM5_IRQn);
   NVIC_EnableIRQ(TIM3_IRQn);
+
+  // setup radio channel
+  RCC->APB1ENR |= RCC_APB1ENR_TIM2EN;
+  RCC->APB2ENR |= RCC_APB2ENR_TIM9EN | RCC_APB2ENR_TIM10EN | RCC_APB2ENR_TIM11EN;
+  radio_ch1::mode(GPIO_ALTERNATE | GPIO_AF_TIM9);
+  radio_ch2::mode(GPIO_ALTERNATE | GPIO_AF_TIM2);
+  radio_ch3::mode(GPIO_ALTERNATE | GPIO_AF_TIM10);
+  radio_ch4::mode(GPIO_ALTERNATE | GPIO_AF_TIM11);
+  radio_in1.init();
+  radio_in2.init();
+  radio_in3.init();
+  radio_in4.init();
+  NVIC_SetPriority(TIM1_BRK_TIM9_IRQn, 1);
+  NVIC_SetPriority(TIM2_IRQn, 1);
+  NVIC_SetPriority(TIM1_UP_TIM10_IRQn, 1);
+  NVIC_SetPriority(TIM1_TRG_COM_TIM11_IRQn, 1);
+  NVIC_EnableIRQ(TIM1_BRK_TIM9_IRQn);
+  NVIC_EnableIRQ(TIM2_IRQn);
+  NVIC_EnableIRQ(TIM1_UP_TIM10_IRQn);
+  NVIC_EnableIRQ(TIM1_TRG_COM_TIM11_IRQn);
+
 
   // setup motors
   RCC->APB2ENR |= RCC_APB2ENR_TIM1EN;
@@ -262,5 +290,26 @@ void TIM5_IRQHandler(void)
 {
   left_sonars.irq();
 }
+
+void TIM1_BRK_TIM9_IRQHandler(void)
+{
+  radio_in1.irq();
+}
+
+void TIM2_IRQHandler(void)
+{
+  radio_in2.irq();
+}
+
+void TIM1_UP_TIM10_IRQHandler(void)
+{
+  radio_in3.irq();
+}
+
+void TIM1_TRG_COM_TIM11_IRQHandler(void)
+{
+  radio_in4.irq();
+}
+
 
 } /* extern C */
