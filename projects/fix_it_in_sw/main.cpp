@@ -50,9 +50,9 @@ extern "C"
 
 typedef Gpio<GPIOA_BASE,0> left_enc_a;
 typedef Gpio<GPIOA_BASE,1> left_enc_b;
-typedef Gpio<GPIOA_BASE,2> radio_ch1; /* TIM9, CH1 */
+typedef Gpio<GPIOA_BASE,2> radio_gpio1; /* TIM9, CH1 */
 typedef Gpio<GPIOA_BASE,3> left_CS;
-typedef Gpio<GPIOA_BASE,5> radio_ch2; /* TIM2, CH1 */
+typedef Gpio<GPIOA_BASE,5> radio_gpio2; /* TIM2, CH1 */
 typedef Gpio<GPIOA_BASE,7> tim1_ch1n;
 typedef Gpio<GPIOA_BASE,8> tim1_ch1;
 typedef Gpio<GPIOA_BASE,9> tim1_ch2;
@@ -62,8 +62,8 @@ typedef Gpio<GPIOB_BASE,1> current_sense; /* A9 */
 typedef Gpio<GPIOB_BASE,5> motor_enable;
 typedef Gpio<GPIOB_BASE,6> serial_tx; /* USART1 */
 typedef Gpio<GPIOB_BASE,7> serial_rx;
-typedef Gpio<GPIOB_BASE,8> radio_ch3; /* TIM10, CH1 */
-typedef Gpio<GPIOB_BASE,9> radio_ch4; /* TIM11, CH1 */
+typedef Gpio<GPIOB_BASE,8> radio_gpio3; /* TIM10, CH1 */
+typedef Gpio<GPIOB_BASE,9> radio_gpio4; /* TIM11, CH1 */
 typedef Gpio<GPIOB_BASE,10> imu_scl; /* I2C2 */
 typedef Gpio<GPIOB_BASE,11> imu_sda;
 typedef Gpio<GPIOB_BASE,13> sck; /* SPI2 */
@@ -94,10 +94,10 @@ DualPulseTimer<TIM5_BASE, left_enc_a,  left_enc_b > left_sonars;
 DualPulseTimer<TIM3_BASE, right_enc_a, right_enc_b> right_sonars;
 
 // radio input channels
-PulseTimer<TIM9_BASE,  radio_ch1> radio_in1;
-PulseTimer<TIM2_BASE,  radio_ch2> radio_in2;
-PulseTimer<TIM10_BASE, radio_ch3> radio_in3;
-PulseTimer<TIM11_BASE, radio_ch4> radio_in4;
+PulseTimer<TIM9_BASE,  radio_gpio1> radio_ch1;
+PulseTimer<TIM2_BASE,  radio_gpio2> radio_ch2;
+PulseTimer<TIM10_BASE, radio_gpio3> radio_ch3;
+PulseTimer<TIM11_BASE, radio_gpio4> radio_ch4;
 
 
 IMU<I2C2_BASE, DMA1_Stream3_BASE, 3 /* DMA STREAM*/, 7 /* DMA_CHANNEL */, imu_scl, imu_sda> imu;
@@ -111,6 +111,7 @@ Usart<USART1_BASE, 32> usart1;
 
 /* system clock */
 volatile uint32_t system_clock;
+volatile bool main_loop_update_flag;
 
 volatile int16_t left_status, right_status;
 
@@ -123,6 +124,31 @@ void print(char const * str)
     ++str;
   }
 }
+
+void print_gyro()
+{
+  print("gyro :");
+  print(" x="); 
+  print(dec2str(imu.gyro_data.x));
+  print(" y=");
+  print(dec2str(imu.gyro_data.y));
+  print(" z=");
+  print(dec2str(imu.gyro_data.z));
+  print("\r\n");
+}
+
+void print_accel()
+{
+  print("accel :");
+  print(" x="); 
+  print(dec2str(imu.accel_data.x));
+  print(" y=");
+  print(dec2str(imu.accel_data.y));
+  print(" z=");
+  print(dec2str(imu.accel_data.z));
+  print("\r\n");
+}
+
 
 int main(void)
 {  
@@ -176,14 +202,14 @@ int main(void)
   // setup radio channel
   RCC->APB1ENR |= RCC_APB1ENR_TIM2EN;
   RCC->APB2ENR |= RCC_APB2ENR_TIM9EN | RCC_APB2ENR_TIM10EN | RCC_APB2ENR_TIM11EN;
-  radio_ch1::mode(GPIO_ALTERNATE | GPIO_AF_TIM9);
-  radio_ch2::mode(GPIO_ALTERNATE | GPIO_AF_TIM2);
-  radio_ch3::mode(GPIO_ALTERNATE | GPIO_AF_TIM10);
-  radio_ch4::mode(GPIO_ALTERNATE | GPIO_AF_TIM11);
-  radio_in1.init();
-  radio_in2.init();
-  radio_in3.init();
-  radio_in4.init();
+  radio_gpio1::mode(GPIO_ALTERNATE | GPIO_AF_TIM9);
+  radio_gpio2::mode(GPIO_ALTERNATE | GPIO_AF_TIM2);
+  radio_gpio3::mode(GPIO_ALTERNATE | GPIO_AF_TIM10);
+  radio_gpio4::mode(GPIO_ALTERNATE | GPIO_AF_TIM11);
+  radio_ch1.init();
+  radio_ch2.init();
+  radio_ch3.init();
+  radio_ch4.init();
   NVIC_SetPriority(TIM1_BRK_TIM9_IRQn, 1);
   NVIC_SetPriority(TIM2_IRQn, 1);
   NVIC_SetPriority(TIM1_UP_TIM10_IRQn, 1);
@@ -212,7 +238,7 @@ int main(void)
   serial_tx::mode(GPIO_ALTERNATE_2MHz | GPIO_AF_USART1);
   serial_rx::mode(GPIO_ALTERNATE_2MHz | GPIO_AF_USART1);
   usart1.init(38400);
-  NVIC_SetPriority(USART1_IRQn, 1);
+  NVIC_SetPriority(USART1_IRQn, 2);
   NVIC_EnableIRQ(USART1_IRQn);
 
   // setup systick
@@ -223,21 +249,26 @@ int main(void)
   NVIC_EnableIRQ(SysTick_IRQn);
   system_clock = 0;
   __enable_irq();
+
   
   while(1)
   {
+    if (main_loop_update_flag)
+    {
+      main_loop_update_flag = false;
+      
+      print("s "); print(dec2str(imu.accel_data.z));
+      print(" "); print(dec2str(imu.gyro_data.z));
+      print(" "); print(dec2str(radio_ch1.getPulseWidthUsec()));
+      print(" "); print(dec2str(radio_ch2.getPulseWidthUsec()));
+      print("\r\n");
+    }
+
     if ((system_clock % 1000) == 0)
     {
       left_status = left_motor.read(NCV7729_RD_DIAG);
       right_status = right_motor.read(NCV7729_RD_DIAG);
-      print("accel :");
-      print(" x="); 
-      print(dec2str(imu.accel_data.x));
-      print(" y=");
-      print(dec2str(imu.accel_data.y));
-      print(" z=");
-      print(dec2str(imu.accel_data.z));
-      print("\r\n");
+      //print_gyro();
     }
     imu.imu_update(system_clock);
   }
@@ -274,6 +305,10 @@ void SysTick_Handler(void)
       top_b_led::low(); 
     }
   }
+  if ((system_clock % 100) == 0)
+  {
+    main_loop_update_flag = true;
+  }    
 }
 
 void USART1_IRQHandler(void)
@@ -293,22 +328,22 @@ void TIM5_IRQHandler(void)
 
 void TIM1_BRK_TIM9_IRQHandler(void)
 {
-  radio_in1.irq();
+  radio_ch1.irq();
 }
 
 void TIM2_IRQHandler(void)
 {
-  radio_in2.irq();
+  radio_ch2.irq();
 }
 
 void TIM1_UP_TIM10_IRQHandler(void)
 {
-  radio_in3.irq();
+  radio_ch3.irq();
 }
 
 void TIM1_TRG_COM_TIM11_IRQHandler(void)
 {
-  radio_in4.irq();
+  radio_ch4.irq();
 }
 
 
