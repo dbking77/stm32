@@ -65,59 +65,116 @@
  *  2. mode is always 8N1, no parity
  */
 
-template <unsigned int USARTx, unsigned int SIZE>
-class Usart
-{
+template <unsigned int SIZE>
+struct UsartFifo
+{  
   uint8_t head;
   uint8_t tail;
   uint16_t buffer[SIZE];
 
-public:
+  UsartFifo() : head(0), tail(0) {}
 
-  Usart() : head(0), tail(0) {}
-
-  static void init(uint32_t baud_rate)
+  inline int16_t pop()
   {
-    /* setup for 1 stop bit */
-    reinterpret_cast<USART_TypeDef*>(USARTx)->CR2 &= ~((uint32_t)USART_CR2_STOP);
-    
-    /* setup 8N1, no parity */
-    reinterpret_cast<USART_TypeDef*>(USARTx)->CR1 &= ~((uint32_t) (USART_CR1_M | USART_CR1_PCE | USART_CR1_PS));
-    reinterpret_cast<USART_TypeDef*>(USARTx)->CR1 |= USART_CR1_RE | USART_CR1_TE;
-
-    /* set baud rate */
-    //uint32_t apbclock = 0;
-    if(USARTx == USART1_BASE || USARTx == USART6_BASE)
-      reinterpret_cast<USART_TypeDef*>(USARTx)->BRR = RccImpl::get_pclk2() / baud_rate;
-    else
-      reinterpret_cast<USART_TypeDef*>(USARTx)->BRR = RccImpl::get_pclk1() / baud_rate;
-
-    /* enable rx interrupt and go... */
-    reinterpret_cast<USART_TypeDef*>(USARTx)->CR1 |= USART_CR1_RXNEIE;
-    reinterpret_cast<USART_TypeDef*>(USARTx)->CR1 |= USART_CR1_UE;
-  }
-
-  static void write(uint16_t data)
-  {
-    reinterpret_cast<USART_TypeDef*>(USARTx)->DR = data;
-    while( (reinterpret_cast<USART_TypeDef*>(USARTx)->SR & USART_FLAG_TC) == 0 );
-  }
-
-  int16_t read()
-  {
+    // when head == tail, there is nothing in buffer
     int16_t data = -1;
     if(head != tail){
       data = buffer[tail];
       tail = (tail+1)%SIZE;
     }
+    return data;    
+  }
+
+  inline void push(uint16_t value)
+  {
+    buffer[head] = value; 
+    head = (head+1)%SIZE;
+  }
+};
+
+
+template <unsigned int USART_PTR, unsigned int SIZE>
+class Usart
+{
+  uint16_t overrun_errors;
+  UsartFifo<SIZE> rxbuf;
+  UsartFifo<SIZE> txbuf;
+
+public:
+  static void init(uint32_t baud_rate)
+  {
+    USART_TypeDef* const USARTx = reinterpret_cast<USART_TypeDef*>(USART_PTR);
+
+    /* setup for 1 stop bit */
+    USARTx->CR2 &= ~((uint32_t)USART_CR2_STOP);
+    
+    /* setup 8N1, no parity */
+    USARTx->CR1 &= ~((uint32_t) (USART_CR1_M | USART_CR1_PCE | USART_CR1_PS));
+    USARTx->CR1 |= USART_CR1_RE | USART_CR1_TE;
+
+    /* set baud rate */
+    //uint32_t apbclock = 0;
+    if((USART_PTR == USART1_BASE) || (USART_PTR == USART6_BASE))
+      USARTx->BRR = RccImpl::get_pclk2() / baud_rate;
+    else
+      USARTx->BRR = RccImpl::get_pclk1() / baud_rate;
+
+    /* enable rx interrupt and go... */
+    USARTx->CR1 |= USART_CR1_RXNEIE;
+    USARTx->CR1 |= USART_CR1_UE;
+  }
+
+  void write(uint16_t data)
+  {
+    USART_TypeDef* const USARTx = reinterpret_cast<USART_TypeDef*>(USART_PTR);
+    // push data to tx buffer and enable txe interrupt
+    __disable_irq();
+    txbuf.push(data);
+    USARTx->CR1 |= USART_CR1_TXEIE;
+    __enable_irq();
+  }  
+
+  int16_t read()
+  {
+    __disable_irq();
+    int16_t data = rxbuf.pop();
+    __enable_irq();
     return data;
   }
 
   void irq()
   {
-    buffer[head] = (reinterpret_cast<USART_TypeDef*>(USARTx)->DR & (uint16_t)0x01ff);
-    head = (head+1)%SIZE;
+    USART_TypeDef* const USARTx = reinterpret_cast<USART_TypeDef*>(USART_PTR);
+
+    // if ORE (overrun error) bit gets set it will also trigger an RX interrupt.
+    // to clear the ORE error, first the SR register and then DR to clear the ORE
+    uint32_t sr = USARTx->SR;
+    uint32_t cr1 = USARTx->CR1;
+    if (sr & USART_SR_ORE)
+    {
+      ++overrun_errors;
+    }
+
+    if (sr & USART_SR_RXNE)
+    {
+      rxbuf.push( (reinterpret_cast<USART_TypeDef*>(USARTx)->DR & (uint16_t)0x01ff ) );
+    }
+
+    if ((sr & USART_SR_TXE) && (cr1 & USART_CR1_TXEIE))
+    {      
+      int16_t data = txbuf.pop();
+      if (data == -1)
+      {
+        // no data left, turn off TXE interrupt
+        USARTx->CR1 &= ~USART_CR1_TXEIE;
+      }
+      else 
+      {
+        USARTx->DR = data;
+      }
+    }
   }
+
 };
 
 /* Similar to above, except it adds an enable pin and functions to toggle it:
