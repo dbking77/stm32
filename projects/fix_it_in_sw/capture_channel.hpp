@@ -64,6 +64,7 @@ public:
       if (edge == CC_RISING_EDGE)
       {
         state = CC_STATE_WAITING_FOR_FALLING;
+        overflow_count = 0;
       }
       // else do nothing, still waiting for first rising edge
       break;
