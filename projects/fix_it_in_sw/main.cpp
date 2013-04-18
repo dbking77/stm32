@@ -42,6 +42,7 @@
 #include "imu.hpp"
 #include "pulse_timer.hpp"
 #include "dual_pulse_timer.hpp"
+#include "servo_out.hpp"
 
 extern "C"
 {
@@ -94,7 +95,8 @@ DualPulseTimer<TIM5_BASE, left_enc_a,  left_enc_b > left_sonars;
 DualPulseTimer<TIM3_BASE, right_enc_a, right_enc_b> right_sonars;
 
 // radio input channels
-PulseTimer<TIM9_BASE,  radio_gpio1> radio_ch1;
+//PulseTimer<TIM9_BASE,  radio_gpio1> radio_ch1;
+ServoOut<TIM9_BASE> servo_out1;
 PulseTimer<TIM2_BASE,  radio_gpio2> radio_ch2;
 PulseTimer<TIM10_BASE, radio_gpio3> radio_ch3;
 PulseTimer<TIM11_BASE, radio_gpio4> radio_ch4;
@@ -206,18 +208,21 @@ int main(void)
   radio_gpio2::mode(GPIO_ALTERNATE | GPIO_AF_TIM2);
   radio_gpio3::mode(GPIO_ALTERNATE | GPIO_AF_TIM10);
   radio_gpio4::mode(GPIO_ALTERNATE | GPIO_AF_TIM11);
-  radio_ch1.init();
+  //radio_ch1.init();
   radio_ch2.init();
   radio_ch3.init();
   radio_ch4.init();
-  NVIC_SetPriority(TIM1_BRK_TIM9_IRQn, 1);
+  //NVIC_SetPriority(TIM1_BRK_TIM9_IRQn, 1);
   NVIC_SetPriority(TIM2_IRQn, 1);
   NVIC_SetPriority(TIM1_UP_TIM10_IRQn, 1);
   NVIC_SetPriority(TIM1_TRG_COM_TIM11_IRQn, 1);
-  NVIC_EnableIRQ(TIM1_BRK_TIM9_IRQn);
+  //NVIC_EnableIRQ(TIM1_BRK_TIM9_IRQn);
   NVIC_EnableIRQ(TIM2_IRQn);
   NVIC_EnableIRQ(TIM1_UP_TIM10_IRQn);
   NVIC_EnableIRQ(TIM1_TRG_COM_TIM11_IRQn);
+
+  servo_out1.init();
+  
 
 
   // setup motors
@@ -259,9 +264,22 @@ int main(void)
       
       print("s "); print(dec2str(imu.accel_data.z));
       print(" "); print(dec2str(imu.gyro_data.z));
-      print(" "); print(dec2str(radio_ch1.getPulseWidthUsec()));
+      //print(" "); print(dec2str(radio_ch1.getPulseWidthUsec()));
       print(" "); print(dec2str(radio_ch2.getPulseWidthUsec()));
       print("\r\n");
+
+      int width = radio_ch3.getPulseWidthUsec();
+      float servo_out;
+      if (width == 0)
+      {
+        servo_out = 0.0;
+      }
+      else 
+      {
+        servo_out = float(width-1000)* 0.001f;
+      }
+      servo_out1.setServoOutput(servo_out);
+
     }
 
     if ((system_clock % 1000) == 0)
@@ -328,7 +346,7 @@ void TIM5_IRQHandler(void)
 
 void TIM1_BRK_TIM9_IRQHandler(void)
 {
-  radio_ch1.irq();
+  //radio_ch1.irq();
 }
 
 void TIM2_IRQHandler(void)
