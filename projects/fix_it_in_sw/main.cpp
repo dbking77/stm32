@@ -115,6 +115,11 @@ Usart<USART1_BASE, 32> usart1;
 volatile uint32_t system_clock;
 volatile bool main_loop_update_flag;
 
+volatile float v_motor_out2;
+volatile float v_motor_out3;
+volatile float v_motor_out4;
+volatile float v_motor_out5;
+
 volatile int16_t left_status, right_status;
 
 
@@ -151,9 +156,23 @@ void print_accel()
   print("\r\n");
 }
 
+volatile uint32_t pclk1_freq;
+volatile uint32_t pclk2_freq;
+volatile uint32_t sysclk_freq;
+volatile uint32_t hclk_freq;
+
+RCC_TypeDef *_rcc;
 
 int main(void)
-{  
+{
+
+  pclk1_freq = RccImpl::get_pclk1();
+  pclk2_freq = RccImpl::get_pclk2();
+  sysclk_freq = RccImpl::get_sysclk();
+  hclk_freq = RccImpl::get_hclk();
+
+  _rcc = RCC;
+  
   NVIC_SetPriorityGrouping(3);
 
   // enable all GPIO clocks
@@ -268,7 +287,26 @@ int main(void)
       print(" "); print(dec2str(radio_ch2.getPulseWidthUsec()));
       print("\r\n");
 
-      int width = radio_ch3.getPulseWidthUsec();
+      v_motor_out2 = radio_ch2.getPulseWidthUsec();
+      v_motor_out3 = radio_ch3.getPulseWidthUsec();
+      v_motor_out4 = radio_ch4.getPulseWidthUsec();
+      v_motor_out5 = right_sonars.getCh1PulseWidthUsec();
+
+      int width = radio_ch2.getPulseWidthUsec();
+      if (width == 0)
+      {
+        left_motor.set(0.0);
+        right_motor.set(0.0);
+      }
+      else 
+      {
+        float motor_out = float(width); //-1500)* 0.002f;
+        //v_motor_out = motor_out;
+        //left_motor.set(motor_out);
+        //right_motor.set(motor_out);
+      }      
+
+      /*
       float servo_out;
       if (width == 0)
       {
@@ -279,6 +317,8 @@ int main(void)
         servo_out = float(width-1000)* 0.001f;
       }
       servo_out1.setServoOutput(servo_out);
+      */
+
 
     }
 
@@ -303,22 +343,22 @@ void SysTick_Handler(void)
   {
     if( (system_clock / 1000) % 3 == 0)
     {
-      left_motor.set(0);
-      right_motor.set(0);
+      //left_motor.set(0);
+      //right_motor.set(0);
       top_b_led::high();
       top_r_led::low();
     }
     else if( (system_clock / 1000) % 3 == 1)
     {
-      left_motor.set(0.1);
-      right_motor.set(0.1);
+      //left_motor.set(0.1);
+      //right_motor.set(0.1);
       top_r_led::high();
       top_g_led::low();
     }
     else
     {
-      left_motor.set(-0.1);
-      right_motor.set(-0.1);
+      //left_motor.set(-0.1);
+      //right_motor.set(-0.1);
       top_g_led::high();
       top_b_led::low(); 
     }

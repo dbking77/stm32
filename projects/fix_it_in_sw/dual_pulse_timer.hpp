@@ -2,6 +2,7 @@
 #include "stm32f4xx.h"
 #include "gpio.hpp"
 #include "stm32f4xx_tim.h"
+#include "rcc.hpp"
 
 
 // Configures signal timer channel to support two capture inputs on CH1 and CH2
@@ -13,7 +14,9 @@ class DualPulseTimer
   CaptureChannel ch1, ch2;
 
   TIM_TypeDef* tim;
-
+  uint32_t clock_freq;
+  uint32_t prescaler;
+  float tick_time_usec;
   // sonar pulse width output : 147uSec/inch 
   // max range 254 inches ~= 37msec
   // repeat rate ~20Hz = 50ms
@@ -22,7 +25,7 @@ public:
 
 
   // returns pulse width in uSec, returns 0 if no pulses have been seen for last ~200mSec
-  uint32_t getCh1PulseWidthUsec()
+  float getCh1PulseWidthUsec()
   {
     __disable_irq();
     uint32_t width = ch1.getPulseWidth();
@@ -30,36 +33,60 @@ public:
     // 1/Fclk * prescaler * 1e6usec/sec 
     // 1/168e6 * 128 * 1e6 = 0.7619 usec per tick
     // 195/256 = 0.76171875 ~= 7619
-    return (width * 195) >> 8; 
+    return float(width)*tick_time_usec;
   }
 
   // returns pulse width in uSec, returns 0 if no pulses have been seen for last ~200mSec
-  uint32_t getCh2PulseWidthUsec()
+  float getCh2PulseWidthUsec()
   {
     __disable_irq();
     uint32_t width = ch2.getPulseWidth();
     __enable_irq();
     // 1/Fclk * prescaler * 1e6usec/sec 
+    // 1e6
     // 1/168e6 * 128 * 1e6 = 0.7619 usec per tick
     // 195/256 = 0.76171875 ~= 7619
-    return (width * 195) >> 8; 
+    return float(width)*tick_time_usec;
   }
-
-
 
   void init()
   {
     TIM_TypeDef* const TIMx = (TIM_TypeDef* const)  _TIMER16_PTR;
     tim = TIMx;
 
+    switch (_TIMER16_PTR)
+    {
+    case TIM2_BASE:
+    case TIM3_BASE:
+    case TIM4_BASE:
+    case TIM5_BASE:
+    case TIM6_BASE:
+    case TIM12_BASE:
+    case TIM13_BASE:    
+    case TIM14_BASE:
+      clock_freq = RccImpl::get_pclk1();
+      break;
+    case TIM1_BASE:
+    case TIM8_BASE:
+    case TIM9_BASE:
+    case TIM10_BASE:
+    case TIM11_BASE:
+    default:
+      clock_freq = RccImpl::get_pclk2();
+      break;
+    }
+
     // Counter should have max resolution 0xFFFF, and prescaler should 
     // be set to give about 50ms period
-    // 1/Fclk * 0xFFFF * prescaler = 50mSec
-    // 1/160Mhz * 0xFFFF * 122 != 50mSecc
-    
+    // 1/Fclk * 0xFFFF * prescaler = period
+    // prescaler = Fclk * period / 0xFFFF = 168e6 * 50e-3 / 0xFFFF ~= 128
+    prescaler = (clock_freq * 50) / (0xFFFF * 1000);
+    tick_time_usec = (1e6f * prescaler) / float(clock_freq) * 0.5f; // for whatever reason clock seems to count twice as fast as expectedx;
+
+
     TIM_TimeBaseInitTypeDef time_base_init;
     TIM_TimeBaseStructInit(&time_base_init);
-    time_base_init.TIM_Prescaler = 120;  
+    time_base_init.TIM_Prescaler = (prescaler-1);
     time_base_init.TIM_CounterMode = TIM_CounterMode_Up;
     time_base_init.TIM_Period = 0xFFFF;
     time_base_init.TIM_ClockDivision = TIM_CKD_DIV1;
