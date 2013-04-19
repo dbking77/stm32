@@ -115,13 +115,9 @@ Usart<USART1_BASE, 32> usart1;
 volatile uint32_t system_clock;
 volatile bool main_loop_update_flag;
 
-volatile float v_motor_out2;
-volatile float v_motor_out3;
-volatile float v_motor_out4;
-volatile float v_motor_out5;
-
+volatile float v_throttle;
 volatile int16_t left_status, right_status;
-
+volatile int v_runtime = 0;
 
 void print(char const * str)
 {
@@ -274,60 +270,66 @@ int main(void)
   system_clock = 0;
   __enable_irq();
 
-  
+
   while(1)
   {
+    float throttle = radio_ch2.getPulseWidthUsec();      
+    v_throttle = throttle;
+
+
+    /*
+    if ((throttle == 0.0) || (throttle <  1500.0f))
+    {
+      servo_out1.setServoOutput(0.0f);
+      right_motor.set(0.0f);
+      left_motor.set(0.0f);
+    }
+    */
+    if (main_loop_update_flag)
+    {	
+      if (v_runtime > 0)
+      { 
+      v_runtime -= 1;
+      float weapon_out = float(throttle-1500.0f) * 0.002f;
+      //servo_out1.setServoOutput(weapon_out);
+      float motor_out = float(throttle-1500.0f) * 0.002f;
+      right_motor.set(0.2); //motor_out);
+      left_motor.set(0.2); //motor_out);
+      }
+      else
+      {
+         right_motor.set(0.0f);
+         left_motor.set(0.0f);
+      }
+    }
+
+    int input = usart1.read();
+    while(input != -1)
+    {
+      if (input == 'g')
+      {	
+	v_runtime = 20;
+      }
+      input = usart1.read();
+    }
+
     if (main_loop_update_flag)
     {
       main_loop_update_flag = false;
-      
+
       print("s "); print(dec2str(imu.accel_data.z));
       print(" "); print(dec2str(imu.gyro_data.z));
+      print(" "); print(dec2str(right_sonars.getCh1PulseWidthUsec()));
+      print(" "); print(dec2str(radio_ch3.getPulseWidthUsec()));
+      print(" "); print(dec2str(radio_ch4.getPulseWidthUsec()));
       //print(" "); print(dec2str(radio_ch1.getPulseWidthUsec()));
       print(" "); print(dec2str(radio_ch2.getPulseWidthUsec()));
       print("\r\n");
-
-      v_motor_out2 = radio_ch2.getPulseWidthUsec();
-      v_motor_out3 = radio_ch3.getPulseWidthUsec();
-      v_motor_out4 = radio_ch4.getPulseWidthUsec();
-      v_motor_out5 = right_sonars.getCh1PulseWidthUsec();
-
-      int width = radio_ch2.getPulseWidthUsec();
-      if (width == 0)
-      {
-        left_motor.set(0.0);
-        right_motor.set(0.0);
-      }
-      else 
-      {
-        float motor_out = float(width); //-1500)* 0.002f;
-        //v_motor_out = motor_out;
-        //left_motor.set(motor_out);
-        //right_motor.set(motor_out);
-      }      
-
-      /*
-      float servo_out;
-      if (width == 0)
-      {
-        servo_out = 0.0;
-      }
-      else 
-      {
-        servo_out = float(width-1000)* 0.001f;
-      }
-      servo_out1.setServoOutput(servo_out);
-      */
-
-
     }
 
-    if ((system_clock % 1000) == 0)
-    {
-      left_status = left_motor.read(NCV7729_RD_DIAG);
-      right_status = right_motor.read(NCV7729_RD_DIAG);
-      //print_gyro();
-    }
+    //left_status = left_motor.read(NCV7729_RD_DIAG);
+    //right_status = right_motor.read(NCV7729_RD_DIAG);
+    //print_gyro();
     imu.imu_update(system_clock);
   }
 
