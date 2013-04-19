@@ -43,7 +43,8 @@
 #include "pulse_timer.hpp"
 #include "dual_pulse_timer.hpp"
 #include "servo_out.hpp"
-
+#include "simple_planner.hpp"
+#include "sonar.hpp"
 extern "C"
 {
 #include "comm.h"
@@ -118,6 +119,15 @@ volatile bool main_loop_update_flag;
 volatile float v_throttle;
 volatile int16_t left_status, right_status;
 volatile int v_runtime = 0;
+
+SimplePlanner planner;
+
+struct RobotState
+{
+
+
+} robot_state;
+
 
 void print(char const * str)
 {
@@ -270,45 +280,74 @@ int main(void)
   system_clock = 0;
   __enable_irq();
 
-
+  float avg_accel_z = 0.0f;
+  
   while(1)
   {
     float throttle = radio_ch2.getPulseWidthUsec();      
     v_throttle = throttle;
+ 
+    bool drive_enabled = (throttle > 1500) || (v_runtime > 0);
+    bool weapon_enabled = (throttle > 1500);
 
-
-    /*
-    if ((throttle == 0.0) || (throttle <  1500.0f))
+    if (!drive_enabled)
     {
-      servo_out1.setServoOutput(0.0f);
       right_motor.set(0.0f);
       left_motor.set(0.0f);
     }
-    */
+
+    if (weapon_enabled)
+    {
+      servo_out1.setServoOutput(0.0f);
+    }
+    else
+    {
+      float weapon_out = float(throttle-1500.0f) * 0.002f;
+      servo_out1.setServoOutput(weapon_out);
+    }
+    
+    
     if (main_loop_update_flag)
     {	
       if (v_runtime > 0)
       { 
-      v_runtime -= 1;
-      float weapon_out = float(throttle-1500.0f) * 0.002f;
-      //servo_out1.setServoOutput(weapon_out);
-      float motor_out = float(throttle-1500.0f) * 0.002f;
-      right_motor.set(0.2); //motor_out);
-      left_motor.set(0.2); //motor_out);
+        v_runtime -= 1;
+      }
+      
+      Commands cmds;
+      Measurements measurements;
+      print(" "); print(dec2str(right_sonars.getCh1PulseWidthUsec()));
+      print(" "); print(dec2str(radio_ch3.getPulseWidthUsec()));
+      print(" "); print(dec2str(radio_ch4.getPulseWidthUsec()));
+
+      measurements.front = convertSonarData(right_sonars.getCh1PulseWidthUsec());
+      measurements.right = convertSonarData(radio_ch3.getPulseWidthUsec());
+      measurements.left = convertSonarData(radio_ch4.getPulseWidthUsec());
+      planner.plan(cmds, measurements);
+
+      if (drive_enabled)
+      {
+        //float motor_out = float(throttle-1500.0f) * 0.002f;
+        float forward = cmds.forward * 0.3f;
+        float rotate = cmds.rotate * 0.3f;
+        float right = forward + rotate;
+        float left = -forward + rotate;
+        right_motor.set(right); //motor_out);
+        left_motor.set(left); //motor_out);
       }
       else
       {
-         right_motor.set(0.0f);
-         left_motor.set(0.0f);
+        right_motor.set(0.0f);
+        left_motor.set(0.0f);
       }
     }
 
     int input = usart1.read();
-    while(input != -1)
+    while (input != -1)
     {
       if (input == 'g')
       {	
-	v_runtime = 20;
+        v_runtime = 20;
       }
       input = usart1.read();
     }
@@ -316,6 +355,8 @@ int main(void)
     if (main_loop_update_flag)
     {
       main_loop_update_flag = false;
+
+      avg_accel_z += 0.1f * (imu.accel_data.z - avg_accel_z);      
 
       print("s "); print(dec2str(imu.accel_data.z));
       print(" "); print(dec2str(imu.gyro_data.z));
@@ -368,7 +409,7 @@ void SysTick_Handler(void)
   if ((system_clock % 100) == 0)
   {
     main_loop_update_flag = true;
-  }    
+  }
 }
 
 void USART1_IRQHandler(void)
