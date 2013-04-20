@@ -17,7 +17,11 @@ struct SonarFilter
   float update(int time_usec)
   {
     float distance = convertSonarData(time_usec);
-    average += 0.5 * (distance - average);
+    if (distance > 1.8f)
+    {
+      distance = 1.8f;
+    }
+    average += 0.1f * (distance - average);
     return average;
   }
 };

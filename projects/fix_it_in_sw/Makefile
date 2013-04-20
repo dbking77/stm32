@@ -101,6 +101,14 @@ $(BUILD_PATH)/$(PRG).elf: $(BUILDDIRS) $(TGT_BIN)
 $(BUILDDIRS):
 	@mkdir -p $@
 
+.PHONY: pull_planner
+PULL_PATH = /home/dbking/bbot2/bbot2_sim/
+pull_planner:
+	cp $(PULL_PATH)/simple_planner.cpp .
+	cp $(PULL_PATH)/simple_planner.hpp .
+	cp $(PULL_PATH)/sonar.hpp .
+	cp $(PULL_PATH)/measurements.hpp .	 
+
 # Generate .gdbinit
 .PHONY: .gdbinit
 .gdbinit: 

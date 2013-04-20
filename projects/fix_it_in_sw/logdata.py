@@ -27,14 +27,14 @@ def main():
     fd = open(fn, 'wb')
 
     ser = serial.Serial(devname, 38400, timeout=1.0)
-    ser.write('g')
+    #ser.write('g')
 
     while True:
         line = ser.readline()
         if line is not None:
             print line
 	    fd.write(line)
-	ser.write('g')
+        ser.write('g')
 
     ser.close()
     

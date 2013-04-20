@@ -120,11 +120,16 @@ volatile float v_throttle;
 volatile int16_t left_status, right_status;
 volatile int v_runtime = 0;
 
+float avg_accel_z = 0.0f;
+
 SimplePlanner planner;
+
 
 struct RobotState
 {
-
+  SonarFilter front;
+  SonarFilter right;
+  SonarFilter left;
 
 } robot_state;
 
@@ -280,7 +285,6 @@ int main(void)
   system_clock = 0;
   __enable_irq();
 
-  float avg_accel_z = 0.0f;
   
   while(1)
   {
@@ -296,7 +300,7 @@ int main(void)
       left_motor.set(0.0f);
     }
 
-    if (weapon_enabled)
+    if (!weapon_enabled)
     {
       servo_out1.setServoOutput(0.0f);
     }
@@ -320,10 +324,11 @@ int main(void)
       print(" "); print(dec2str(radio_ch3.getPulseWidthUsec()));
       print(" "); print(dec2str(radio_ch4.getPulseWidthUsec()));
 
-      measurements.front = convertSonarData(right_sonars.getCh1PulseWidthUsec());
-      measurements.right = convertSonarData(radio_ch3.getPulseWidthUsec());
-      measurements.left = convertSonarData(radio_ch4.getPulseWidthUsec());
+      measurements.front = robot_state.front.update(right_sonars.getCh1PulseWidthUsec());
+      measurements.right = robot_state.right.update(radio_ch3.getPulseWidthUsec());
+      measurements.left  = robot_state.left.update(radio_ch4.getPulseWidthUsec());
       planner.plan(cmds, measurements);
+
 
       if (drive_enabled)
       {
@@ -332,6 +337,11 @@ int main(void)
         float rotate = cmds.rotate * 0.3f;
         float right = forward + rotate;
         float left = -forward + rotate;
+        if (avg_accel_z < 0)
+        {
+          right = -right;
+          left  = -left;
+        }
         right_motor.set(right); //motor_out);
         left_motor.set(left); //motor_out);
       }
@@ -356,7 +366,7 @@ int main(void)
     {
       main_loop_update_flag = false;
 
-      avg_accel_z += 0.1f * (imu.accel_data.z - avg_accel_z);      
+      avg_accel_z += 0.01f * (float(imu.accel_data.z) - avg_accel_z);
 
       print("s "); print(dec2str(imu.accel_data.z));
       print(" "); print(dec2str(imu.gyro_data.z));
