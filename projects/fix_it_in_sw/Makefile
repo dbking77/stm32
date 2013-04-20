@@ -102,7 +102,7 @@ $(BUILDDIRS):
 	@mkdir -p $@
 
 .PHONY: pull_planner
-PULL_PATH = /home/dbking/bbot2/bbot2_sim/
+PULL_PATH = /home/dbking/bbot2/bbot_sim/
 pull_planner:
 	cp $(PULL_PATH)/simple_planner.cpp .
 	cp $(PULL_PATH)/simple_planner.hpp .

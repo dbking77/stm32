@@ -16,6 +16,7 @@ struct SimplePlanner
   enum {SP_MOVE_IDLE=0, SP_MOVE_BACK=1, SP_MOVE_TURN_RIGHT=3, SP_MOVE_TURN_LEFT=4, SP_MOVE_SHOOT=5} move;
   void plan(Commands &cmds, const Measurements &measurements);
   void center(Commands &cmds, const Measurements &measurements);
+  void center2(Commands &cmds, const Measurements &measurements);
   void spin(Commands &cmds, const Measurements &measurements);
 
   void cmdCenter() {state = SP_STATE_CENTER; move = SP_MOVE_IDLE;}

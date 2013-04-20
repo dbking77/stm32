@@ -332,9 +332,15 @@ int main(void)
 
       if (drive_enabled)
       {
-        //float motor_out = float(throttle-1500.0f) * 0.002f;
-        float forward = cmds.forward * 0.3f;
-        float rotate = cmds.rotate * 0.3f;
+        //float motor_out = float(throttle-1500.0f) * 0.002f;        
+        float forward = cmds.forward;
+        float rotate = cmds.rotate;
+        if (forward >  1.0f) forward = 1.0f;
+        if (forward < -1.0f) forward = -1.0f;
+        if (rotate >  1.0f) rotate = 1.0f;
+        if (rotate < -1.0f) rotate = -1.0f;
+        forward *= 0.3f;
+        rotate  *= 0.2f;
         float right = forward + rotate;
         float left = -forward + rotate;
         if (avg_accel_z < 0)
