@@ -1,4 +1,3 @@
-
 // convert pulse time in in microseconds to distace in meters
 float convertSonarData(int time_usec)
 {
@@ -21,7 +20,7 @@ struct SonarFilter
     {
       distance = 1.8f;
     }
-    average += 0.5f * (distance - average);
+    average += 0.1f * (distance - average);
     return average;
   }
 };

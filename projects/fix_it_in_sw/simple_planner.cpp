@@ -116,6 +116,7 @@ void SimplePlanner::center2(Commands &cmds, const Measurements &measurements)
   else
   {
     state = SP_STATE_SPIN;
+    delay = 500;
   }
 }
 
@@ -133,8 +134,16 @@ void SimplePlanner::spin(Commands &cmds, const Measurements &measurements)
   }
   else 
   {
-    cmds.rotate = 0.3f;
-    cmds.forward = 0.0f;
+    if (delay > 0)
+    {
+      --delay;
+      cmds.rotate = 0.3f;
+      cmds.forward = 0.0f;
+    }
+    else
+    {
+      cmdDelay(20);
+    }
   }
   
 }
@@ -145,6 +154,19 @@ void SimplePlanner::plan(Commands &cmds, const Measurements &measurements)
   {
   case SP_STATE_IDLE:
     cmdCenter();
+    break;
+
+  case SP_STATE_DELAY:
+    cmds.forward = 0.0f;
+    cmds.rotate = 0.0f;
+    if (delay > 0)
+    {
+      --delay;
+    }
+    else 
+    {
+      cmdCenter();
+    }
     break;
 
   case SP_STATE_CENTER:
@@ -170,6 +192,7 @@ const char* SimplePlanner::getStateStr() const
   case SP_STATE_SCAN:   return "scan";
   case SP_STATE_SPIN:   return "spin";
   case SP_STATE_ATTACK: return "attack";
+  case SP_STATE_DELAY:  return "delay";
   default : return "??";
   }
 }

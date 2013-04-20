@@ -285,17 +285,19 @@ int main(void)
   system_clock = 0;
   __enable_irq();
 
-  
+  planner.cmdDelay(20);
+
   while(1)
   {
     float throttle = radio_ch2.getPulseWidthUsec();      
     v_throttle = throttle;
  
-    bool drive_enabled = (throttle > 1500) || (v_runtime > 0);
+    bool drive_enabled =  (throttle > 1500) || (v_runtime > 0);
     bool weapon_enabled = (throttle > 1500);
 
     if (!drive_enabled)
     {
+      planner.cmdDelay(20); 
       right_motor.set(0.0f);
       left_motor.set(0.0f);
     }
