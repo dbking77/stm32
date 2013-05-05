@@ -20,7 +20,7 @@ struct SonarFilter
     {
       distance = 1.8f;
     }
-    average += 0.1f * (distance - average);
+    average += 0.25f * (distance - average);
     return average;
   }
 };

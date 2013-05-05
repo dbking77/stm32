@@ -66,7 +66,8 @@ void SimplePlanner::center(Commands &cmds, const Measurements &measurements)
         if (measurements.front < 1.0f)
         {
           //std::cout << "Done " << rl_offset << " " << abs_rl_offset << std::endl;
-          state = SP_STATE_SPIN;
+          //state = SP_STATE_SPIN;
+          cmdSpin();
         }
       }
     }
@@ -78,7 +79,8 @@ void SimplePlanner::center(Commands &cmds, const Measurements &measurements)
       }
       else
       {
-        state = SP_STATE_SPIN;
+        //state = SP_STATE_SPIN;
+        cmdSpin();
       }
     }
   }
@@ -110,13 +112,12 @@ void SimplePlanner::center2(Commands &cmds, const Measurements &measurements)
   {
     // move forward towards center
     cmds.forward = (measurements.front > 0.6f) ? 0.5f : -0.5f;
-    cmds.rotate = -rl_offset * 3.0f;
+    cmds.rotate = -rl_offset * 2.0f;
     if (cmds.forward < 0.0) cmds.rotate = -cmds.rotate;
   }
   else
   {
-    state = SP_STATE_SPIN;
-    delay = 500;
+    cmdSpin();
   }
 }
 
@@ -137,11 +138,19 @@ void SimplePlanner::spin(Commands &cmds, const Measurements &measurements)
     if (delay > 0)
     {
       --delay;
-      cmds.rotate = 0.3f;
+      if (spin_direction)
+      {
+        cmds.rotate = 0.5f;
+      }
+      else 
+      {
+        cmds.rotate = -0.5;
+      }
       cmds.forward = 0.0f;
     }
     else
     {
+      spin_direction = !spin_direction;
       cmdDelay(20);
     }
   }
@@ -166,6 +175,19 @@ void SimplePlanner::plan(Commands &cmds, const Measurements &measurements)
     else 
     {
       cmdCenter();
+    }
+    break;
+
+  case SP_STATE_FORWARD:
+    if ((delay > 0) || (measurements.front > 0.8f))
+    {
+      if (delay > 0) --delay;
+      cmds.forward = 0.3f;
+      cmds.rotate = 0.0f;
+    }
+    else 
+    {
+      cmdDelay(20);
     }
     break;
 

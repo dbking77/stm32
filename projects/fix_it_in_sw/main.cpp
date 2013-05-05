@@ -285,19 +285,19 @@ int main(void)
   system_clock = 0;
   __enable_irq();
 
-  planner.cmdDelay(20);
+  planner.cmdForward(10); 
 
   while(1)
   {
     float throttle = radio_ch2.getPulseWidthUsec();      
     v_throttle = throttle;
  
-    bool drive_enabled =  (throttle > 1500) || (v_runtime > 0);
-    bool weapon_enabled = (throttle > 1500);
+    bool drive_enabled =  (throttle > 1300) || (v_runtime > 0);
+    bool weapon_enabled = (throttle > 1700);
 
     if (!drive_enabled)
     {
-      planner.cmdDelay(20); 
+      planner.cmdForward(30); 
       right_motor.set(0.0f);
       left_motor.set(0.0f);
     }
@@ -322,27 +322,26 @@ int main(void)
       
       Commands cmds;
       Measurements measurements;
-      print(" "); print(dec2str(right_sonars.getCh1PulseWidthUsec()));
-      print(" "); print(dec2str(radio_ch3.getPulseWidthUsec()));
-      print(" "); print(dec2str(radio_ch4.getPulseWidthUsec()));
+      //print(" "); print(dec2str(right_sonars.getCh1PulseWidthUsec()));
+      //print(" "); print(dec2str(radio_ch3.getPulseWidthUsec()));
+      //print(" "); print(dec2str(radio_ch4.getPulseWidthUsec()));
 
       measurements.front = robot_state.front.update(right_sonars.getCh1PulseWidthUsec());
       measurements.right = robot_state.right.update(radio_ch3.getPulseWidthUsec());
       measurements.left  = robot_state.left.update(radio_ch4.getPulseWidthUsec());
       planner.plan(cmds, measurements);
 
-
       if (drive_enabled)
       {
         //float motor_out = float(throttle-1500.0f) * 0.002f;        
         float forward = cmds.forward;
-        float rotate = cmds.rotate;
+        float rotate  = cmds.rotate;
         if (forward >  1.0f) forward = 1.0f;
         if (forward < -1.0f) forward = -1.0f;
         if (rotate >  1.0f) rotate = 1.0f;
         if (rotate < -1.0f) rotate = -1.0f;
         forward *= 0.3f;
-        rotate  *= 0.2f;
+        rotate  *= 0.3f;
         float right = forward + rotate;
         float left = -forward + rotate;
         if (avg_accel_z < 0)
